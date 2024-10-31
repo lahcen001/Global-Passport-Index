@@ -1,0 +1,2 @@
+create a new project using nextjs and tailwindcss that show passport for every country how many can travel to that country and how many can travel from that country
+ 
