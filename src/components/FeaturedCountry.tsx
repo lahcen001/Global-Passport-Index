@@ -6,11 +6,32 @@ import Link from 'next/link';
 
 interface LocationData {
   country_name: string;
+  country_code: string;
 }
 
-interface UserCountryData extends PassportDataEntry {
+interface UserCountryData {
+  country: string;
+  canTravelTo: number;
+  canTravelFrom: number;
   ranking: number;
 }
+
+// Add a safe logging utility
+const safeLogError = (message: string) => {
+  // Only log in development and when window is available
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    // Use a try-catch to prevent any potential errors from breaking the app
+    try {
+      // Create a custom event instead of using console.error
+      const errorEvent = new CustomEvent('app-error', { 
+        detail: { message, timestamp: new Date().toISOString() }
+      });
+      window.dispatchEvent(errorEvent);
+    } catch {
+      // Silently fail if event creation fails
+    }
+  }
+};
 
 export default function FeaturedCountry(): JSX.Element {
   const [userCountry, setUserCountry] = useState<UserCountryData | null>(null);
@@ -22,7 +43,6 @@ export default function FeaturedCountry(): JSX.Element {
 
     async function getLocation() {
       try {
-        // Try to get user's location from IP
         const response = await fetch('https://ipapi.co/json/', {
           method: 'GET',
           headers: {
@@ -32,14 +52,13 @@ export default function FeaturedCountry(): JSX.Element {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to fetch location data');
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data: LocationData = await response.json();
         
         if (!isMounted) return;
 
-        // Find matching country in our passport data
         const countryMatch = passportData.find(
           c => c.country.toLowerCase() === data.country_name.toLowerCase()
         );
@@ -54,8 +73,14 @@ export default function FeaturedCountry(): JSX.Element {
           setDefaultCountry();
           setError('Could not detect your location - showing default data');
         }
-      } catch (error) {
+      } catch (err) {
         if (!isMounted) return;
+        
+        if (err instanceof Error) {
+          const errorMessage = `Location detection failed: ${err.message}`;
+          safeLogError(errorMessage);
+        }
+        
         setDefaultCountry();
         setError('Could not detect your location - showing default data');
       } finally {
@@ -83,8 +108,21 @@ export default function FeaturedCountry(): JSX.Element {
     }
   };
 
+  const getFlagUrl = (countryName: string): string => {
+    const countryCodeMap: Record<string, string> = {
+      'United States': 'us',
+      'United Kingdom': 'gb',
+      'South Korea': 'kr',
+      'North Korea': 'kp',
+    };
+
+    const code = countryCodeMap[countryName] || 
+                countryName.toLowerCase().slice(0, 2);
+    return `https://flagcdn.com/w80/${code}.png`;
+  };
+
   if (loading) {
-    return (
+    return (    
       <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-8">
         <div className="animate-pulse">
           <div className="h-8 bg-blue-400/50 rounded w-1/3 mb-4"></div>
@@ -105,7 +143,13 @@ export default function FeaturedCountry(): JSX.Element {
   if (!userCountry) {
     return (
       <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-8 text-white">
-        <p className="text-center">Unable to load country data</p>
+        <div className="text-center">
+          <div className="text-4xl mb-4">🌍</div>
+          <p className="text-xl font-semibold mb-2">Unable to load country data</p>
+          <p className="text-sm text-blue-200">
+            Please check your internet connection and try again
+          </p>
+        </div>
       </div>
     );
   }
@@ -123,7 +167,17 @@ export default function FeaturedCountry(): JSX.Element {
                 </span>
               )}
             </div>
-            <h2 className="text-3xl font-bold">{userCountry.country}</h2>
+            <div className="flex items-center gap-3">
+              <img 
+                src={getFlagUrl(userCountry.country)}
+                alt={`${userCountry.country} flag`}
+                className="w-8 h-6 object-cover rounded shadow-sm"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://flagcdn.com/w80/un.png';
+                }}
+              />
+              <h2 className="text-3xl font-bold">{userCountry.country}</h2>
+            </div>
           </div>
           <div className="text-5xl">
             {error ? '🌎' : '📍'}
